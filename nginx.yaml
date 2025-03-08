@@ -1,0 +1,98 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx
+  namespace: your-namespace
+  labels:
+    app: nginx
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      securityContext:
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: nginx
+          image: nginx:latest
+          ports:
+            - containerPort: 8080
+          volumeMounts:
+            - mountPath: "/var/cache/nginx"
+              name: nginx-cache
+            - name: nginx-config
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            capabilities:
+              drop:
+                - ALL
+      volumes:
+        - name: nginx-cache
+          emptyDir: {}
+        - name: nginx-config
+          configMap:
+            name: nginx-config
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-config
+  namespace: your-namespace
+data:
+  nginx.conf: |
+    user nginx;
+    worker_processes auto;
+    pid /run/nginx.pid;
+    include /etc/nginx/modules/*.conf;
+
+    events {
+        worker_connections 1024;
+    }
+
+    http {
+        server {
+            listen 8080;
+            server_name localhost;
+
+            location / {
+                root /usr/share/nginx/html;
+                index index.html;
+            }
+        }
+    }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx
+  namespace: your-namespace
+spec:
+  selector:
+    app: nginx
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8080
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: nginx
+  namespace: your-namespace
+spec:
+  to:
+    kind: Service
+    name: nginx
+  port:
+    targetPort: 80
+  tls:
+    termination: edge
